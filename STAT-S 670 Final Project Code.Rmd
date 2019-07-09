@@ -1,0 +1,559 @@
+---
+title: "Final Project R Code"
+author: "Chrislin, Dhivya, Rajeshwari, Varun"
+date: "April 13, 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r }
+library(knitr,warn.conflicts = F)
+library(foreign,warn.conflicts = F)
+library(ggplot2,warn.conflicts = F)
+library(tidyr,warn.conflicts = F)
+library(plyr, warn.conflicts = F)
+library(viridis, warn.conflicts = F)
+library(dplyr, warn.conflicts = F)
+```
+
+
+# Initial filtering of dataset to "final_dataset.csv" using the aggregate and kills data:
+
+```{r}
+#agg_0<-read.csv("Downloads/pubg-match-deaths/aggregate/agg_match_stats_0.csv",header = T,stringsAsFactors = F)
+#kills_0<-read.csv("Downloads/pubg-match-deaths/deaths/kill_match_stats_final_0.csv",header = T,stringsAsFactors = F)
+
+#kills_0 <- kills_0 %>% filter(map == "MIRAMAR")
+
+#final_dataset <- merge(kills_0,agg_0,by.x = c("match_id","killer_name"),by.y = c("match_id","player_name"))
+
+#write.csv(final_dataset,"final_dataset.csv",row.names = F)
+```
+
+```{r}
+data <- read.csv("sample_dataset.csv",header = T,stringsAsFactors = F)
+#View(data)
+```
+
+```{r}
+data <- data %>% filter(party_size == 1)
+data$killed_by <- tolower(data$killed_by)
+```
+
+```{r}
+data=data[!is.na(data$killer_placement),]
+nrow(data)
+```
+
+#Code used to take a sample of the final dataset:
+
+```{r}
+#complete_data <- data
+#data.matches <- unique(data$match_id)
+#data.matches <- data.matches[1:500]
+#data <- data %>% filter(match_id %in% data.matches)
+#write.csv(data,"sample_dataset.csv",row.names = F)
+```
+
+```{r}
+ggplot(data,aes(x=time))+geom_histogram(position='dodge',bins=20,fill='darkblue')+
+        xlab("Time into the game (seconds)")+
+        ylab("Number of kills")+
+        labs(title="Number of kills against time")+
+        scale_x_continuous(breaks=seq(0,3000,200))+
+        theme_bw()+
+        theme(plot.title = element_text(hjust = 0.5),
+              axis.title.y = element_text(),
+              axis.title.x = element_text(),
+              axis.text.x = element_text(),
+              axis.text.y = element_text())+
+        theme(panel.border = element_rect(colour = "black", fill = NA))+
+        theme(panel.background = element_rect(fill = "white"))
+```
+
+
+```{r}
+library(dplyr)
+kill_data<-data
+kill_data$kill_distance<-((kill_data$killer_position_x - kill_data$victim_position_x)**2 + (kill_data$killer_position_y - kill_data$victim_position_y)**2)**(1/2)
+
+kill_data<-kill_data%>%
+                      mutate(kn = as.character(killer_name), vn = as.character(victim_name)) %>%
+                                filter(kn!=vn)
+grp_kill_data<-ddply(kill_data,c('killed_by'),summarise,mean_kill_distance=mean(kill_distance,na.rm = T))
+
+grp_kill_data=grp_kill_data[!is.na(grp_kill_data$mean_kill_distance),]
+grp_kill_data$killed_by2<-factor(grp_kill_data$killed_by, levels = grp_kill_data[order(grp_kill_data$mean_kill_distance),]$killed_by)
+
+paste("no of weapons:",nrow(grp_kill_data))
+```
+
+```{r}
+TOPweapon<-data.frame(killed_by=c("m416","scar-l","m16a4","akm","ump9","s1897","kar98k","sks","mini 14","s686"))
+TOPweapon$isTop10<-rep('Top10',length(TOPweapon))
+merge_weapon<-merge(grp_kill_data,TOPweapon,by=c("killed_by"),all.x=T)
+merge_weapon[is.na(merge_weapon)]<-'Other'
+```
+
+```{r fig.width=9,fig.height=7}
+ggplot(merge_weapon,aes(x=mean_kill_distance,y=killed_by2,color="orange"))+geom_point(size=3)+
+        xlab("Distance between killer and victim")+
+        ylab("Weapon used by the killer")+
+        labs(title="Distance between killer and victim for different weapons")+
+        theme_bw()+
+        theme(plot.title = element_text(face='bold',hjust = 0.5, size=20),
+              axis.title.y = element_text(face="bold",  size=16),
+              axis.title.x = element_text(face="bold",  size=16),
+              axis.text.x = element_text(size =11),
+              axis.text.y = element_text(size = 11)) +
+        theme(legend.title = element_text( size=14, face="bold"),
+              legend.text = element_text( size = 14, face = "bold"))+
+        theme(panel.border = element_rect(colour = "black", fill = NA))+
+        theme(legend.position = "none") +
+        theme(panel.background = element_rect(fill = "white"))
+```
+
+#Coordinates:
+
+```{r}
+distance_data = data %>% select(match_id, killer_name, victim_name, killer_position_x,killer_position_y,victim_position_x,victim_position_y)
+summary(distance_data$killer_position_x)
+summary(distance_data$killer_position_y)
+```
+
+#Killer:
+
+```{r}
+distance_data$norm_killer_x <- distance_data$killer_position_x * 1000/800000
+distance_data$norm_killer_y <- distance_data$killer_position_y * 1000/800000
+distance_data$norm_victim_x <- distance_data$victim_position_x * 1000/800000
+distance_data$norm_victim_y <- distance_data$victim_position_y * 1000/800000
+```
+
+```{r}
+library(jpeg)
+my_image=readJPEG("miramar.jpg")
+library(grid)
+img = rasterGrob(my_image, width = unit(1,"npc"), height = unit(1,"npc"))
+```
+
+#All Deaths on Miramar Map
+#Please note: The value of alpha has been regulated when there are more data points to depict the death hotspots in the map
+
+```{r}
+gg = ggplot(distance_data,aes(x=norm_victim_x, y=norm_victim_y)) + annotation_custom(img, xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) + geom_point(size = 0.001, color = "red", alpha = 0.25) 
+gg + xlim(0,1000) + ylim(1000,0) + xlab("Victim's x coordinate position") + ylab("Victim's y coordinate position") + ggtitle("Death hotspots in the game on the Miramar map") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r}
+weapon_data = data %>% select(match_id, killer_name, victim_name, killed_by,player_kills)
+weapon_data <- weapon_data %>% filter(killer_name!=victim_name)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+weapon_agg <- weapon_data %>% group_by(killed_by) %>% summarise(count = n()) %>% arrange(desc(count))
+```
+
+```{r}
+#summary(weapon_agg$count)
+```
+
+```{r}
+
+weapon_agg$weapon = weapon_agg$killed_by
+weapon_agg$weapon[weapon_agg$count < median(weapon_agg$count)] <- "Others"
+weapon_agg2 <- weapon_agg %>% group_by(weapon) %>% summarise(count = sum(count)) %>% arrange(desc(count))
+o = order(weapon_agg2$count, decreasing = F)
+weapon_agg2$weapon = factor(weapon_agg2$weapon, levels = weapon_agg2$weapon[o])
+ggplot(weapon_agg2,aes(x=weapon,y=count))+geom_bar(stat="identity")+coord_flip()+ theme_bw() + ggtitle("Top Lethal Weapons") + ylab("Number of Kills") + xlab("Weapon") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+## change to number of kills / number of matches for each weapon
+```{r}
+weapon_agg_new <- weapon_data %>% group_by(killed_by,match_id) %>% summarise(count = n()) %>% arrange(desc(count))
+weapon_agg_new <- weapon_agg_new %>% group_by(killed_by) %>% summarise(count = n()) %>% arrange(desc(count))
+
+```
+
+```{r}
+colnames(weapon_agg_new)[colnames(weapon_agg_new)=="count"] <- "num_matches"
+weapon_final <- merge(weapon_agg,weapon_agg_new,by=c("killed_by","killed_by"))
+weapon_final$avg_kills = weapon_final$count/weapon_final$num_matches
+#normalize
+weapon_final$weapon_score <- weapon_final$avg_kills/sum(weapon_final$avg_kills)
+summary(weapon_final$weapon_score)
+```
+
+```{r}
+weapon_final3 = weapon_final %>% filter(weapon_score > 0.02300)
+o = order(weapon_final3$weapon_score, decreasing = F)
+weapon_final3$killed_by = factor(weapon_final3$killed_by, levels = weapon_final3$killed_by[o])
+
+ggplot(weapon_final3,aes(x=killed_by,y = weapon_score)) + geom_bar(stat="identity", fill = colorRampPalette(c("#00BFC4"))(11)) + coord_flip() + ylab("Weapon Score") + xlab("Weapon") +  ggtitle("Ten Most Lethal Weapons") + theme(plot.title = element_text(hjust = 0.5), panel.background = element_blank()) +
+geom_text(aes(label=round(weapon_score,3)), position=position_dodge(width=0.9), vjust=0.25, hjust=1.1)
+```
+
+Outlier treatment: As distance between killer and victim for punch cannot be that high
+
+```{r}
+library(plyr)
+kill_data<-kill_data%>%filter(killer_position_x !=0 & killer_position_y !=0  )
+kill_data<-kill_data%>%filter(victim_position_x !=0 & victim_position_y !=0  )
+print(nrow(kill_data))
+grp_kill_data<-ddply(kill_data,c('killed_by'),summarise,mean_kill_distance=mean(kill_distance))
+grp_kill_data$killed_by2<-factor(grp_kill_data$killed_by, levels = grp_kill_data[order(grp_kill_data$mean_kill_distance),]$killed_by)
+grp_kill_data<-grp_kill_data%>%mutate(isTop10=case_when(killed_by%in%c("m416","scar-l","m16a4","akm","ump9","s1897","kar98k","sks","mini 14","s686") ~ 'Top10', TRUE ~ 'Other'))
+```
+
+```{r fig.width=10,fig.height=8}
+ggplot(grp_kill_data,aes(x=mean_kill_distance,y=killed_by2,color=isTop10))+geom_point(size=3)+
+        xlab("Average distance between killer and victim")+
+          ylab("Weapon used by the killer")+
+        labs(title="Average distance between killer and victim for different weapons")+
+        theme_bw()+
+        theme(plot.title = element_text(face='bold',hjust = 0.5, size=18),
+              axis.title.y = element_text(face="bold",  size=14,hjust = 0.6),
+              axis.title.x = element_text(face="bold",  size=14),
+              axis.text.x = element_text(size =12),
+              axis.text.y = element_text(size = 12))+
+        theme(legend.title = element_text( size=14, face="bold"),
+              legend.text = element_text( size = 14, face = "bold"))+
+        theme(panel.border = element_rect(colour = "black", fill = NA))+
+        theme(legend.box.background = element_rect(colour = "black"))+
+        theme(panel.background = element_rect(fill = "white")) + labs(color='Top 10 Weapon Flag') 
+```
+
+#Deaths by M416 Rifle on Miramar Map
+
+```{r}
+distance_data_m416 <- data %>% filter(killed_by == "m416") 
+distance_data_m416$norm_killer_x <- distance_data_m416$killer_position_x * 1000/800000
+distance_data_m416$norm_killer_y <- distance_data_m416$killer_position_y * 1000/800000
+distance_data_m416$norm_victim_x <- distance_data_m416$victim_position_x * 1000/800000
+distance_data_m416$norm_victim_y <- distance_data_m416$victim_position_y * 1000/800000
+```
+
+```{r}
+library(png)
+gg = ggplot(distance_data_m416,aes(x=norm_victim_x, y=norm_victim_y)) + annotation_custom(img, xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) + geom_point(size = 0.001, color = "green",alpha = 0.5) 
+gg + xlim(0,1000) + ylim(1000,0) + xlab("Victim's x coordinate position") + ylab("Victim's y coordinate position") + ggtitle("Death by an M416 rifle in the game on the Miramar map") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+```{r}
+data2 <- data
+data2$killed_by <- ifelse(data2$killed_by == "motorbike (sidecar)","motorbike",data2$killed_by)
+data2$killed_by <- ifelse(data2$killed_by == "death.projmolotov_damagefield_c","bluecircle",data2$killed_by)
+```
+
+```{r}
+weapon_no_kills = data2 %>% select(match_id, killer_name, victim_name, killed_by,player_kills)
+weapon_no_kills <- weapon_no_kills %>% filter(killer_name==victim_name)
+weapon_no_kills_agg <- weapon_no_kills %>% group_by(killed_by) %>% summarise(count = n()) %>% arrange(desc(count))
+weapon_no_kills_agg_new <- weapon_no_kills %>% group_by(killed_by,match_id) %>% summarise(count = n()) %>% arrange(desc(count))
+weapon_no_kills_agg_new <- weapon_no_kills_agg_new %>% group_by(killed_by) %>% summarise(count = n()) %>% arrange(desc(count))
+colnames(weapon_no_kills_agg_new)[colnames(weapon_no_kills_agg_new)=="count"] <- "num_matches"
+weapon_final_no_kills <- merge(weapon_no_kills_agg,weapon_no_kills_agg_new,by=c("killed_by","killed_by"))
+weapon_final_no_kills$avg_use_match = weapon_final_no_kills$count/weapon_final_no_kills$num_matches
+#summary(weapon_final_no_kills$avg_use_match)
+o = order(weapon_final_no_kills$avg_use_match, decreasing = F)
+
+weapon_final_no_kills$killed_by = factor(weapon_final_no_kills$killed_by, levels = weapon_final_no_kills$killed_by [o])
+weapon_final_no_kills <- weapon_final_no_kills %>% filter(avg_use_match>1)
+
+ggplot(weapon_final_no_kills,aes(x=killed_by,y=avg_use_match))+geom_bar(stat="identity", fill = colorRampPalette(c("#F8766D"))(3))+coord_flip()+
+
+theme(plot.title = element_text(hjust = 0.5), panel.background = element_blank()) +
+geom_text(aes(label=round(avg_use_match,3)), position=position_dodge(width=0.9), vjust=0.25, hjust=1.1) + ggtitle("Top Reasons for Accidental Self Kills") + xlab("Manner of Death") + ylab("Average number of self kills per match")
+
+```
+
+#Accidentally hit by car on Miramar Map
+
+```{r}
+distance_data_car <- data %>% filter(killed_by == "hit by car") 
+distance_data_car$norm_killer_x <- distance_data_car$killer_position_x * 1000/800000
+distance_data_car$norm_killer_y <- distance_data_car$killer_position_y * 1000/800000
+distance_data_car$norm_victim_x <- distance_data_car$victim_position_x * 1000/800000
+distance_data_car$norm_victim_y <- distance_data_car$victim_position_y * 1000/800000
+```
+
+```{r}
+library(png)
+gg = ggplot(distance_data_car,aes(x=norm_victim_x, y=norm_victim_y)) + annotation_custom(img, xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) + geom_point(size = 0.001, color = "gold", alpha = 0.5) 
+gg + xlim(0,1000) + ylim(1000,0) + xlab("Victim's x coordinate position") + ylab("Victim's y coordinate position") + ggtitle("Hotspots where the victim was accidently hit by a car on the Miramar map") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+## train test split
+
+```{r}
+print(length(unique(data$match_id)))
+mids <- unique(data$match_id)
+```
+# split to make sure match ids are exclusive
+```{r}
+train_mid =  mids[0:400]
+test_mid = mids[401:500]
+```
+
+```{r}
+library(dplyr)
+train <- data %>% filter(match_id %in% train_mid)
+test <- data %>% filter(match_id %in% test_mid)
+```
+
+```{r}
+#write.csv(train, "train.csv")
+#write.csv(test, "test.csv")
+```
+
+## prediction code
+## Getting required variables in train . Level of data: match id, killer name
+```{r}
+library(dplyr, warn.conflicts = F)
+#train <- read.csv("train.csv",header = T,stringsAsFactors = F)
+train = train %>% select(match_id, killer_name, player_assists, player_dist_ride,player_dist_walk,player_dmg,player_kills,player_survive_time,killer_placement)
+
+# defining response variable
+train$top10_or_not <- ifelse(train$killer_placement>10, 0, 1)
+# unique for match id, killer name
+train = unique(train)
+
+
+train = train %>% select(player_assists, player_dist_ride,player_dist_walk,player_dmg,player_kills,player_survive_time,top10_or_not)
+```
+
+
+## Getting required variables in test . Level of data: match id, killer name
+```{r}
+#test <- read.csv("test.csv",header = T,stringsAsFactors = F)
+test = test %>% select(match_id, killer_name, player_assists, player_dist_ride,player_dist_walk,player_dmg,player_kills,player_survive_time,killer_placement)
+
+test$top10_or_not <- ifelse(test$killer_placement>10, 0, 1)
+test = unique(test)
+
+test = test %>% select(player_assists, player_dist_ride,player_dist_walk,player_dmg,player_kills,player_survive_time,top10_or_not)
+```
+
+
+
+## downsampling data
+```{r}
+library(caret,warn.conflicts = F)
+set.seed(1000)
+train$top10_or_not=as.factor(train$top10_or_not)
+downSampledMiramarSolo1 <- downSample(x = train[, -ncol(train)], y = train$top10_or_not)
+table(downSampledMiramarSolo1$Class)
+filteredSolo1 = downSampledMiramarSolo1
+```
+
+
+## Logistic Regression
+```{r}
+mylogit1 <- suppressWarnings(glm(Class ~ . , data = filteredSolo1, family=binomial(link="logit")))
+summary(mylogit1)
+```
+
+
+
+## Logistic Regression
+```{r}
+
+# training accuracy
+predValidtrain1 = predict(mylogit1, newdata = filteredSolo1, type = "response")
+glm.predtrain1 = ifelse(predValidtrain1 > 0.50, 1, 0)
+print("classification rate: train")
+mean(glm.predtrain1 == filteredSolo1$Class)
+
+# test accuracy
+test$top10_or_not=as.factor(test$top10_or_not)
+predValid1 = predict(mylogit1, newdata = test, type = "response")
+glm.pred1 = ifelse(predValid1 > 0.50, 1, 0)
+print("classification rate: test")
+mean(glm.pred1 == test$top10_or_not)
+
+# f1 score: test
+y1 <- factor(glm.pred1)
+predictions1 <- factor(test$top10_or_not)
+precision1 <- posPredValue(predictions1, y1, positive="1")
+recall1 <- sensitivity(predictions1, y1, positive="1")
+F1_score <- (2 * precision1 * recall1) / (precision1 + recall1)
+print("F1 Score: test")
+F1_score
+
+
+```
+
+## correlation matrix
+```{r}
+train_2 <- train
+names(train_2)[1] <- "Assists"
+names(train_2)[2] <- "Distance.Ride"
+names(train_2)[3] <- "Distance.Walk"
+names(train_2)[4] <- "Damage"
+names(train_2)[5] <- "Kills"
+names(train_2)[6] <- "Survive.Time"
+library(GGally,warn.conflicts = F)
+suppressWarnings(ggcorr(train_2, palette = "RdBu", label = TRUE))
+```
+
+
+
+## removing multicollinearity
+```{r}
+colSums(is.na(filteredSolo1))
+train_mod <- filteredSolo1[,-c(4,6)]
+test_mod <- test[,-c(4,6)]
+print("modified cols")
+colSums(is.na(train_mod))
+```
+
+
+## logistic on modified data
+```{r}
+
+mylogit2 <- glm(Class ~ . , data = train_mod, family=binomial(link="logit"))
+summary(mylogit2)
+```
+
+
+
+# results
+```{r}
+#training accuracy
+predValidtrain2 = predict(mylogit2, newdata = train_mod, type = "response")
+glm.train2 = ifelse(predValidtrain2 > 0.50, 1, 0)
+print("classification rate: train")
+mean(glm.train2 == train_mod$Class)
+
+#test accuracy
+test_mod$top10_or_not=as.factor(test_mod$top10_or_not)
+predValid2 = predict(mylogit2, newdata = test_mod, type = "response")
+glm.pred2 = ifelse(predValid2 > 0.50, 1, 0)
+print("classification rate: train")
+mean(glm.pred2 == test_mod$top10_or_not)
+
+# f1 score on test
+y2 <- factor(glm.pred2)
+predictions2 <- factor(test_mod$top10_or_not)
+precision2 <- posPredValue(predictions2, y2, positive="1")
+recall2 <- sensitivity(predictions2, y2, positive="1")
+F1_score2 <- (2 * precision2 * recall2) / (precision2 + recall2)
+print("F1 score: test")
+F1_score2
+
+
+```
+
+## Logistic Regression:
+
+# Individual:
+
+```{r}
+newTestLogit = test_mod
+newTestLogit$pred <- predict(mylogit2, test_mod, type = "response")
+ggplot(newTestLogit, aes(x=player_kills, y=pred, color = top10_or_not)) + geom_point(alpha = 0.25) + annotate("text", label = "Predicted that player lies in top 10", x = 20, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 20, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Number of Kills") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Logistic Regression Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Number of Kills") 
+```
+
+```{r}
+ggplot(newTestLogit, aes(x=player_dist_walk, y=pred, color = top10_or_not)) + geom_point(size = 0.05) + annotate("text", label = "Predicted that player lies in top 10", x = 9000, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 9000, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Total Distance Walked") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Logistic Regression Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Distance Walked") 
+```
+
+```{r}
+ggplot(newTestLogit, aes(x=player_dist_ride, y=pred, color = top10_or_not)) + geom_point(size = 0.05) + annotate("text", label = "Predicted that player lies in top 10", x = 17500, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 17500, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Total Distance Ridden") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Logistic Regression Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Distance Ridden") 
+
+```
+
+```{r}
+ggplot(newTestLogit, aes(x=player_assists, y=pred, color = top10_or_not)) + geom_point(size = 0.05) + annotate("text", label = "Predicted that player lies in top 10", x = 3, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 3, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Player Assists") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Logistic Regression Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Player Assists") 
+
+```
+
+Interactions:
+
+```{r}
+ggplot(newTestLogit, aes(x=player_kills * player_dist_walk, y=pred, color = top10_or_not)) + geom_point(alpha = 0.25) + annotate("text", label = "Predicted that player lies in top 10", x = 75000, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 75000, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs (Kills * Distance Walked)") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Logistic Regression Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Kills * Distance Walked") 
+```
+
+```{r}
+ggplot(newTestLogit, aes(x=player_dist_ride * player_dist_walk, y=pred, color = top10_or_not)) + geom_point(alpha = 0.25) + annotate("text", label = "Predicted that player lies in top 10", x = 40000000, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 40000000, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs (Distance Ridden * Distance Walked)") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Logistic Regression Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Distance Ridden * Distance Walked")
+```
+
+```{r}
+library(party,warn.conflicts = F)
+library(randomForest,warn.conflicts = F)
+
+random_forest_model <- randomForest(Class ~ . , data = train_mod)
+
+print(random_forest_model) 
+
+predtrain <- predict(random_forest_model, train_mod, type = "class")
+print("classification rate: train")
+mean(predtrain == train_mod$Class)
+
+print("classification rate: test")
+test_mod$top10_or_not=as.factor(test_mod$top10_or_not)
+predRF <- suppressWarnings(predict(random_forest_model, test_mod, type = "class"))
+suppressWarnings(mean(predRF == test_mod$top10_or_not))
+
+library(caret,warn.conflicts = F)
+y <- predRF
+predictions <- suppressWarnings(train_mod$Class)
+precision <- suppressWarnings(posPredValue(predictions, y, positive="1"))
+recall <- suppressWarnings(sensitivity(predictions, y, positive="1"))
+F1 <- (2 * precision * recall) / (precision + recall)
+print("F1 score: test")
+F1
+
+suppressWarnings(varImpPlot(random_forest_model)) 
+suppressWarnings(importance(random_forest_model))
+```
+
+Random Forest:
+
+```{r}
+newTestRF = test_mod
+newTestRF$pred <- predict(random_forest_model, test_mod, type = "prob")[,2]
+ggplot(newTestRF, aes(x=player_kills, y=pred, color = top10_or_not)) + geom_point(alpha = 0.25) + annotate("text", label = "Predicted that player lies in top 10", x = 20, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 20, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Number of Kills") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Random Forest Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Number of Kills") 
+```
+
+```{r}
+ggplot(newTestRF, aes(x=player_dist_walk, y=pred, color = top10_or_not)) + geom_point(size = 0.05) + annotate("text", label = "Predicted that player lies in top 10", x = 9000, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 9000, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Total Distance Walked") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Random Forest Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Distance Walked") 
+```
+
+```{r}
+ggplot(newTestRF, aes(x=player_dist_ride, y=pred, color = top10_or_not)) + geom_point(size = 0.05) + annotate("text", label = "Predicted that player lies in top 10", x = 17500, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 17500, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Total Distance Ridden") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Random Forest Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Distance Ridden") 
+
+```
+
+```{r}
+ggplot(newTestRF, aes(x=player_assists, y=pred, color = top10_or_not)) + geom_point(size = 0.05) + annotate("text", label = "Predicted that player lies in top 10", x = 3, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 3, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs Player Assists") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Random Forest Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Player Assists") 
+
+```
+
+Interactions:
+
+```{r}
+ggplot(newTestRF, aes(x=player_kills * player_dist_walk, y=pred, color = top10_or_not)) + geom_point(alpha = 0.25) + annotate("text", label = "Predicted that player lies in top 10", x = 75000, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 75000, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs (Kills * Distance Walked)") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Random Forest Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Kills * Distance Walked") 
+```
+
+```{r}
+ggplot(newTestRF, aes(x=player_dist_ride * player_dist_walk, y=pred, color = top10_or_not)) + geom_point(alpha = 0.25) + annotate("text", label = "Predicted that player lies in top 10", x = 40000000, y = 0.75, size = 2.5, colour = "black") + geom_hline(yintercept = 0.5, color = "black",linetype = "dashed") + annotate("text", label = "Predicted that player does not lie in top 10", x = 40000000, y = 0.25, size = 2.5, colour = "black") + theme_bw() + ggtitle("Player's Position in the Top 10 vs (Distance Ridden * Distance Walked)") + 
+theme(plot.title = element_text(hjust = 0.5),plot.subtitle = element_text(hjust = 0.5)) + labs(subtitle = '(Using the Random Forest Model)',color='Top 10 flag (Actual)') + theme(legend.box.background = element_rect(colour = "black")) + ylab("Predicted Probability") + xlab("Distance Ridden * Distance Walked")
+```
+
